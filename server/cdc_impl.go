@@ -140,7 +140,15 @@ func NewMetaCDC(serverConfig *CDCServerConfig) *MetaCDC {
 func (e *MetaCDC) ReloadTask() {
 	reverse := e.config.EnableReverse
 	reverseConfig := e.config.ReverseMilvus
+	err := reverseConfig.ParseURI()
+	if err != nil {
+		log.Panic("parse reverseConfig URI error", zap.Error(err))
+	}
 	currentConfig := e.config.CurrentMilvus
+	err = currentConfig.ParseURI()
+	if err != nil {
+		log.Panic("parse currentConfig URI error", zap.Error(err))
+	}
 	if reverse && (reverseConfig.Host == "" ||
 		reverseConfig.Port <= 0 ||
 		currentConfig.Host == "" ||
@@ -155,6 +163,10 @@ func (e *MetaCDC) ReloadTask() {
 	}
 
 	for _, taskInfo := range taskInfos {
+		err := taskInfo.MilvusConnectParam.ParseURI()
+		if err != nil {
+			return
+		}
 		milvusAddress := fmt.Sprintf("%s:%d", taskInfo.MilvusConnectParam.Host, taskInfo.MilvusConnectParam.Port)
 		newCollectionNames := lo.Map(taskInfo.CollectionInfos, func(t model.CollectionInfo, _ int) string {
 			return t.Name
@@ -181,6 +193,10 @@ func (e *MetaCDC) Create(req *request.CreateRequest) (resp *request.CreateRespon
 			log.Warn("fail to create cdc task", zap.Any("req", req), zap.Error(err))
 		}
 	}()
+	err = req.MilvusConnectParam.ParseURI()
+	if err != nil {
+		return nil, err
+	}
 	if err = e.validCreateRequest(req); err != nil {
 		return nil, err
 	}
@@ -451,6 +467,10 @@ func (e *MetaCDC) getUUID() string {
 
 func (e *MetaCDC) startInternal(info *meta.TaskInfo, ignoreUpdateState bool) error {
 	taskLog := log.With(zap.String("task_id", info.TaskID))
+	err := info.MilvusConnectParam.ParseURI()
+	if err != nil {
+		return err
+	}
 	milvusConnectParam := info.MilvusConnectParam
 	milvusAddress := fmt.Sprintf("%s:%d", milvusConnectParam.Host, milvusConnectParam.Port)
 	e.replicateEntityMap.RLock()
@@ -547,6 +567,10 @@ func (e *MetaCDC) startInternal(info *meta.TaskInfo, ignoreUpdateState bool) err
 
 func (e *MetaCDC) newReplicateEntity(info *meta.TaskInfo) (*ReplicateEntity, error) {
 	taskLog := log.With(zap.String("task_id", info.TaskID))
+	err := info.MilvusConnectParam.ParseURI()
+	if err != nil {
+		return nil, err
+	}
 	milvusConnectParam := info.MilvusConnectParam
 	milvusAddress := fmt.Sprintf("%s:%d", milvusConnectParam.Host, milvusConnectParam.Port)
 
@@ -900,6 +924,10 @@ func (e *MetaCDC) pauseTaskWithReason(taskID, reason string, currentStates []met
 	cdcTask.Reason = reason
 	e.cdcTasks.Unlock()
 
+	err = cdcTask.MilvusConnectParam.ParseURI()
+	if err != nil {
+		return err
+	}
 	milvusAddress := GetMilvusAddress(cdcTask.MilvusConnectParam)
 	e.replicateEntityMap.Lock()
 	if replicateEntity, ok := e.replicateEntityMap.data[milvusAddress]; ok {
@@ -941,6 +969,10 @@ func (e *MetaCDC) delete(taskID string) error {
 	info, err = store.DeleteTask(e.metaStoreFactory, taskID)
 	if err != nil {
 		return errors.WithMessage(err, "fail to delete the task meta, task_id: "+taskID)
+	}
+	err = info.MilvusConnectParam.ParseURI()
+	if err != nil {
+		return err
 	}
 	milvusAddress := fmt.Sprintf("%s:%d", info.MilvusConnectParam.Host, info.MilvusConnectParam.Port)
 	collectionNames := info.CollectionNames()

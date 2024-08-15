@@ -18,10 +18,17 @@
 
 package model
 
-import "github.com/zilliztech/milvus-cdc/core/util"
+import (
+	"github.com/zilliztech/milvus-cdc/core/util"
+	"net/url"
+	"strconv"
+	"strings"
+)
 
 //go:generate easytags $GOFILE json,mapstructure
 type MilvusConnectParam struct {
+	URI             string          `json:"uri" mapstructure:"uri"`
+	Token           string          `json:"token" mapstructure:"token"`
 	Host            string          `json:"host" mapstructure:"host"`
 	Port            int             `json:"port" mapstructure:"port"`
 	Username        string          `json:"username,omitempty" mapstructure:"username,omitempty"`
@@ -31,6 +38,50 @@ type MilvusConnectParam struct {
 	IgnorePartition bool            `json:"ignore_partition" mapstructure:"ignore_partition"`
 	// ConnectTimeout unit: s
 	ConnectTimeout int `json:"connect_timeout" mapstructure:"connect_timeout"`
+}
+
+func (p *MilvusConnectParam) ParseURI() error {
+	if p.URI != "" {
+		parsedURL, err := url.Parse(p.URI)
+		if err != nil {
+			return err
+		}
+
+		// parse scheme
+		if parsedURL.Scheme == "https" {
+			p.EnableTLS = true
+		} else {
+			p.EnableTLS = false
+		}
+
+		// parse host
+		p.Host = parsedURL.Host
+
+		// parse host
+		if parsedURL.Port() == "" {
+			p.Port = 443
+		} else {
+			p.Port, err = strconv.Atoi(parsedURL.Port())
+			if err != nil {
+				return err
+			}
+		}
+
+		//// parse database
+		//if parsedURL.Path == "" || parsedURL.Path == "/" {
+		//	p.Database = "default"
+		//} else {
+		//	p.Database = strings.Substring(1)
+		//}
+	}
+
+	if p.Token != "" {
+		splitStrings := strings.Split(p.Token, ":")
+		p.Username = splitStrings[0]
+		p.Password = splitStrings[1]
+	}
+
+	return nil
 }
 
 type CollectionInfo struct {
